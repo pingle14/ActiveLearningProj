@@ -1,6 +1,5 @@
 import jax.numpy as jnp
-from jax import jit, random
-from tqdm import tqdm
+from jax import jit
 
 
 # functional form

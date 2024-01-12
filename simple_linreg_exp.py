@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 from jax import random
-from tqdm import tqdm
 from query_strategies.core_set import CoreSet
 from query_strategies.adjusted_fisher import AdjustedFisher
 from query_strategies.bait import BAIT
@@ -12,26 +11,27 @@ from linreg_utils.data_gen import generate_linear_data
 from linreg_utils.model import linear_model, linear_regression
 
 
+def generate_rand_true_coeffs():
+    key = random.PRNGKey(9355442)
+    _, key_coeff, _, _ = random.split(key, 4)
+    random_true_coeffs = np.asarray(
+        random.normal(key_coeff, shape=(num_coeffs,))
+    )
+    return random_true_coeffs
+
+
 # python simple_linreg_exp.py -n 100 -c 2 -s 10 -p 1000 -b 1 -i 100
 def experiment(
     num_rounds=10,
     num_coeffs=5,
     initial_sample_sz=20,
-    pool_sz=1000,  # todo redesign w 1 pt at a time ... effective poolsz = pool sz//budget
+    pool_sz=1000,
     budget=10,
     iter_per_algo=10,
     verbose=False,
 ):
-    sampling_algos = {"Random", "BAIT", "Fisher", "CoreSet"}
-    key = random.PRNGKey(9355442)
-    # _, key_coeff, _, _ = random.split(key, 4)
-    # # TRUE_coeff = np.asarray(random.normal(key_coeff, shape=(num_coeffs,)))
-    # # TRUE_coeff_same = np.asarray([TRUE_coeff[0] for _ in range(num_coeffs)])
-    TRUE_coeff_same = np.asarray(
-        [0 if i == 0 else 1 for i in range(num_coeffs)]
-    )
-    if verbose:
-        print(f"TRUE_COEFFS: {TRUE_coeff_same}")
+    sampling_algos = {"Random", "BAIT", "Fisher"}  # , "CoreSet"
+    true_coeff = np.asarray([0 if i == 0 else 1 for i in range(num_coeffs)])
     step_keys = random.split(random.PRNGKey(0), num_rounds)
 
     for sampling_algo in sampling_algos:
@@ -40,7 +40,8 @@ def experiment(
             print(f'{" "* 10}{sampling_algo}')
             print("#" * 30)
 
-        realization_dfs = []
+        realization_param_diffs = []
+        realization_chosen_labels = []
         for realization in tqdm(range(num_rounds)):
             if verbose:
                 print(
@@ -54,7 +55,7 @@ def experiment(
                 "pool_sz": pool_sz,
                 "budget": budget,
                 "iter": iter_per_algo,
-                "true_coeff": TRUE_coeff_same,
+                "true_coeff": true_coeff,
                 "given_key": step_keys[realization][0],
             }
             model = (
@@ -71,33 +72,57 @@ def experiment(
 
             if model:
                 (
-                    _,
+                    labeledX,
                     _,
                     _,
                     diffs,
                 ) = model.simulate()
 
-                realization_df = pd.DataFrame()
-                realization_df["diffs"] = [np.array(_) for _ in diffs]
-                realization_df.reset_index(inplace=True)
-                realization_df.rename(
+                # Update running labels
+                per_realization_labels = pd.DataFrame()
+                per_realization_labels["labels"] = [
+                    np.array(_)
+                    for _ in labeledX[
+                        initial_sample_sz:
+                    ]  # ignore initial random labels
+                ]
+                per_realization_labels["realization"] = realization
+                per_realization_labels.reset_index(inplace=True)
+                per_realization_labels.rename(
                     columns={"index": "Iteration"}, inplace=True
                 )
-                realization_dfs.append(realization_df)
+                realization_chosen_labels.append(per_realization_labels)
 
-        distr_df = pd.concat(realization_dfs, axis=0)
-        distr_df.to_csv(f"data/{sampling_algo}_distr.csv", index=False)
+                # Update running param diffs
+                per_realization_param_diff = pd.DataFrame()
+                per_realization_param_diff["param_diffs"] = [
+                    np.array(_) for _ in diffs
+                ]
+                per_realization_param_diff.reset_index(inplace=True)
+                per_realization_param_diff.rename(
+                    columns={"index": "Iteration"}, inplace=True
+                )
+                realization_param_diffs.append(per_realization_param_diff)
+
+        param_diffs_df = pd.concat(realization_param_diffs, axis=0)
+        param_diffs_df.to_csv(
+            f"data/{sampling_algo}_param_diff.csv", index=False
+        )
+
+        labeledX_df = pd.concat(realization_chosen_labels, axis=0)
+        labeledX_df.to_csv(f"data/{sampling_algo}_labeled.csv", index=False)
 
 
-# ###############################
-#     num_rounds=10,
-#     num_coeffs=5,
-#     initial_sample_sz=20,
-#     pool_sz=1000,
-#     budget=10,
-#     iter_per_algo=10,
-# ###############################
 # ------------------- RUN ---------------------
+# ###############################
+# num_rounds=10,
+# num_coeffs=5,
+# initial_sample_sz=20,
+# pool_sz=1000,
+# budget=10,
+# iter_per_algo=10,
+# ###############################
+
 parser = argparse.ArgumentParser(
     prog="BenchMark", description="Benchamarks stuff"
 )
@@ -105,7 +130,7 @@ parser.add_argument(
     "-n",
     "--numRounds",
     action="store",
-    help=f"Enter number of rounds to build distribution of vars (default=10)",
+    help="Enter number of rounds to build distribution of vars (default=10)",
     type=int,
     required=False,
     default=10,
@@ -114,7 +139,7 @@ parser.add_argument(
     "-c",
     "--numCoeffs",
     action="store",
-    help=f"Enter number of params/coefficients in linreg model (default=5)",
+    help="Enter number of params/coefficients in linreg model (default=5)",
     type=int,
     required=False,
     default=5,
@@ -123,7 +148,7 @@ parser.add_argument(
     "-s",
     "--initSampleSz",
     action="store",
-    help=f"Enter initial_sample_sz (num points to sample in 0th round) (default=20)",
+    help="Enter initial_sample_sz (num points to sample in 0th round) (default=20)",
     type=int,
     required=False,
     default=20,
@@ -132,7 +157,7 @@ parser.add_argument(
     "-p",
     "--poolSz",
     action="store",
-    help=f"Enter num total points collected each night (default=1000)",
+    help="Enter num total points collected each night (default=1000)",
     type=int,
     required=False,
     default=1000,
@@ -141,7 +166,7 @@ parser.add_argument(
     "-b",
     "--budget",
     action="store",
-    help=f"Enter num points can sample each subsequent night (default=10)",
+    help="Enter num points can sample each subsequent night (default=10)",
     type=int,
     required=False,
     default=10,
@@ -150,7 +175,7 @@ parser.add_argument(
     "-i",
     "--itersPerRound",
     action="store",
-    help=f"Enter num iterations each algo should take to converge each round (default=10)",
+    help="Enter num iterations each algo should take to converge each round (default=10)",
     type=int,
     required=False,
     default=10,
@@ -158,7 +183,7 @@ parser.add_argument(
 parser.add_argument(
     "-v",
     "--verbose",
-    help=f"Bool to print stuff or not",
+    help="Bool to print stuff or not",
     type=bool,
     required=False,
     default=False,

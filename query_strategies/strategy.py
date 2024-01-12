@@ -3,7 +3,6 @@ from jax import jit, random, grad
 from abc import ABC, abstractmethod
 from tqdm import tqdm
 import time
-from functools import partial
 
 
 # Estimate variance of the estimated parameters analytically
@@ -45,7 +44,7 @@ class Strategy(ABC):
 
         # Active Learning Strategy Properties
         self.name = name
-        self.initial_sample_sz = initial_sample_sz
+        self.initial_sample_sz = max(1, initial_sample_sz)
         self.pool_sz = pool_sz
         self.budget = budget
         self.iter = iter
@@ -86,9 +85,7 @@ class Strategy(ABC):
         sim_start = time.perf_counter()
         for i in tqdm(range(self.iter)):
             self.choose_sample(key=step_keys[i])
-            estimated_coeffs = self.model_training_fn(
-                self.labeled_X, self.labeled_y
-            )
+            estimated_coeffs = self.model_training_fn(self.labeled_X, self.labeled_y)
             self.current_params = estimated_coeffs
             param_diffs.append(jnp.absolute(estimated_coeffs - self.true_coeff))
         sim_end = time.perf_counter()

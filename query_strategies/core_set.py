@@ -52,9 +52,7 @@ class CoreSet(Strategy):
             given_key=given_key,
         )
         self.vmap_find_nearest_cent = vmap(find_nearest_cent, in_axes=(0, None))
-        self.vmap_update_nearest_cent = vmap(
-            update_nearest_cent, in_axes=(0, 0, None)
-        )
+        self.vmap_update_nearest_cent = vmap(update_nearest_cent, in_axes=(0, 0, None))
 
         # Step 2:
         self.max_num_outliers = 0
@@ -78,7 +76,5 @@ class CoreSet(Strategy):
                 X, self.nearest_dists, X[new_pt_indx]
             )
 
-        self.labeled_y = jnp.append(
-            self.labeled_y, jnp.array(collected_labels), axis=0
-        )
+        self.labeled_y = jnp.append(self.labeled_y, jnp.array(collected_labels), axis=0)
         self.error = jnp.append(self.error, jnp.array(collected_errs), axis=0)
