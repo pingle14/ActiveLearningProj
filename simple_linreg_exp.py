@@ -1,16 +1,18 @@
 import argparse
-import random
+import pandas as pd
+import numpy as np
+from tqdm import tqdm
+from jax import random
+from tqdm import tqdm
 from query_strategies.core_set import CoreSet
 from query_strategies.adjusted_fisher import AdjustedFisher
 from query_strategies.bait import BAIT
 from query_strategies.random_sampling import RandomSampling
-import pandas as pd
-import jax.random as random
-import numpy as np
-from tqdm import tqdm
+from linreg_utils.data_gen import generate_linear_data
+from linreg_utils.model import linear_model, linear_regression
 
 
-# python run.py -n 100 -c 2 -s 10 -p 1000 -b 1 -i 100
+# python simple_linreg_exp.py -n 100 -c 2 -s 10 -p 1000 -b 1 -i 100
 def experiment(
     num_rounds=10,
     num_coeffs=5,
@@ -22,9 +24,9 @@ def experiment(
 ):
     sampling_algos = {"Random", "BAIT", "Fisher", "CoreSet"}
     key = random.PRNGKey(9355442)
-    _, key_coeff, _, _ = random.split(key, 4)
-    # TRUE_coeff = np.asarray(random.normal(key_coeff, shape=(num_coeffs,)))
-    # TRUE_coeff_same = np.asarray([TRUE_coeff[0] for _ in range(num_coeffs)])
+    # _, key_coeff, _, _ = random.split(key, 4)
+    # # TRUE_coeff = np.asarray(random.normal(key_coeff, shape=(num_coeffs,)))
+    # # TRUE_coeff_same = np.asarray([TRUE_coeff[0] for _ in range(num_coeffs)])
     TRUE_coeff_same = np.asarray(
         [0 if i == 0 else 1 for i in range(num_coeffs)]
     )
@@ -45,6 +47,9 @@ def experiment(
                     f"{sampling_algo} REALIZATION: {realization}> key: {step_keys[realization][0]}"
                 )
             kwargs = {
+                "model_inference_fn": linear_model,
+                "model_training_fn": linear_regression,
+                "generate_data": generate_linear_data,
                 "initial_sample_sz": initial_sample_sz,
                 "pool_sz": pool_sz,
                 "budget": budget,

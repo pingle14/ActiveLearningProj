@@ -2,10 +2,9 @@ import jax.numpy as jnp
 from jax import random
 
 
-def generate_data(
+def generate_linear_data(
     sample_size, key=random.PRNGKey(9355442), covariate_size=5, coeff=None
 ):
-
     key_X, key_coeff, key_e, key_err = random.split(key, 4)
 
     # generate random coefficents

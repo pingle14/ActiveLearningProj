@@ -1,16 +1,15 @@
 import jax.numpy as jnp
 from jax import vmap, lax
 from jax.scipy.linalg import det
-from query_strategies.data_gen import generate_data
-from query_strategies.strategy import (
-    estimate_variance,
-    Strategy,
-)
+from query_strategies.strategy import Strategy
 
 
 class AdjustedFisher(Strategy):
     def __init__(
         self,
+        model_inference_fn,
+        model_training_fn,
+        generate_data,
         initial_sample_sz=20,
         pool_sz=100,
         budget=10,
@@ -20,6 +19,9 @@ class AdjustedFisher(Strategy):
     ):
         super(AdjustedFisher, self).__init__(
             name="AdjustedFisher",
+            model_inference_fn=model_inference_fn,
+            model_training_fn=model_training_fn,
+            generate_data=generate_data,
             initial_sample_sz=initial_sample_sz,
             pool_sz=pool_sz,
             budget=budget,
@@ -55,22 +57,20 @@ class AdjustedFisher(Strategy):
         fi_adjusted = jnp.outer(df, df) / (variance + err**2)
         return fi_adjusted
 
-    def update_sample_gradient_strategy(
-        self, X_new, y_new, err_new, params, n_params=None, trace=True
-    ):
-        Xres = X_new - jnp.mean(self.labeled_X, axis=0)
-        variance = estimate_variance(
-            params, self.labeled_y, self.labeled_X, self.error
+    def update_sample(self, key, X, y, error):
+        n_params = None
+        trace = True
+        Xres = X - jnp.mean(self.labeled_X, axis=0)
+        variance = self.estimate_variance(
+            self.current_params, self.labeled_y, self.labeled_X, self.error
         )
         fi = self.fisher_information_vmaped(
-            params, variance, Xres, err_new, n_params, 1
+            self.current_params, variance, Xres, error, n_params, 1
         )
 
         objective_func = jnp.trace(fi, axis1=1, axis2=2) if trace else det(fi)
         indices = self.top_k_indices(objective_func, self.budget)
-
-        sampled_feature_vectors = X_new[indices, :]
-
+        sampled_feature_vectors = X[indices, :]
         self.labeled_X = (
             jnp.append(self.labeled_X, sampled_feature_vectors, axis=0)
             if self.budget > 1
@@ -78,24 +78,5 @@ class AdjustedFisher(Strategy):
                 self.labeled_X, sampled_feature_vectors.reshape((1, -1)), axis=0
             )
         )
-        self.labeled_y = jnp.append(self.labeled_y, y_new[indices])
-        self.error = jnp.append(self.error, err_new[indices])
-
-    def choose_sample(self, key):
-        # Get new data
-        X, y, error, _ = generate_data(
-            self.initial_sample_sz if self.labeled_X is None else self.pool_sz,
-            coeff=self.true_coeff,
-            key=key,
-        )
-
-        if self.labeled_X is None:
-            # Init self.labeled: (initial sample)
-            self.labeled_X = X
-            self.labeled_y = y
-            self.error = error
-        else:
-            # Subsequent samples
-            self.update_sample_gradient_strategy(
-                X, y, error, self.current_params, trace=True
-            )
+        self.labeled_y = jnp.append(self.labeled_y, y[indices])
+        self.error = jnp.append(self.error, error[indices])
