@@ -1,6 +1,20 @@
 import jax.numpy as jnp
 from jax import vmap, jit
 from query_strategies.strategy import Strategy
+from datetime import datetime
+
+
+# from sklearn.metrics import pairwise_distances
+def pairwise_distances(X, Y):
+    # Squared Euclidean distances
+    XX = jnp.sum(X**2, axis=1, keepdims=True)
+    YY = jnp.sum(Y**2, axis=1, keepdims=True)
+    distances = XX + jnp.transpose(YY) - 2 * jnp.dot(X, Y.T)
+    return distances
+
+
+# Vectorize the function using vmap
+pairwise_distances_vmap = vmap(pairwise_distances, in_axes=(0, None))
 
 
 @jit

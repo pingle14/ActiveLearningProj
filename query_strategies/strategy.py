@@ -3,7 +3,6 @@ from jax import jit, random, grad
 from abc import ABC, abstractmethod
 from tqdm import tqdm
 import time
-from functools import partial
 
 
 # Estimate variance of the estimated parameters analytically
@@ -45,7 +44,7 @@ class Strategy(ABC):
 
         # Active Learning Strategy Properties
         self.name = name
-        self.initial_sample_sz = initial_sample_sz
+        self.initial_sample_sz = max(1, initial_sample_sz)
         self.pool_sz = pool_sz
         self.budget = budget
         self.iter = iter
@@ -61,13 +60,7 @@ class Strategy(ABC):
     def update_sample(self, key, X, y, error):
         return
 
-    def choose_sample(self, key):
-        X, y, error, _ = self.generate_data(
-            self.initial_sample_sz if self.labeled_X is None else self.pool_sz,
-            coeff=self.true_coeff,
-            key=key,
-        )
-
+    def choose_sample(self, key, X, y, error):
         if self.labeled_X is None:
             # Init self.labeled: (initial sample)
             self.labeled_X = X
@@ -75,6 +68,14 @@ class Strategy(ABC):
             self.error = error
         else:
             self.update_sample(key, X, y, error)
+
+    def choose_sample_generative(self, key):
+        X, y, error, _ = self.generate_data(
+            self.initial_sample_sz if self.labeled_X is None else self.pool_sz,
+            coeff=self.true_coeff,
+            key=key,
+        )
+        self.choose_sample(key, X, y, error)
 
     def estimate_variance(self, params, y, X, err):
         residual = y - self.model_inference_fn(params, X)
