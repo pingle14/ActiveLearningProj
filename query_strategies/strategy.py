@@ -60,13 +60,7 @@ class Strategy(ABC):
     def update_sample(self, key, X, y, error):
         return
 
-    def choose_sample(self, key):
-        X, y, error, _ = self.generate_data(
-            self.initial_sample_sz if self.labeled_X is None else self.pool_sz,
-            coeff=self.true_coeff,
-            key=key,
-        )
-
+    def choose_sample(self, key, X, y, error):
         if self.labeled_X is None:
             # Init self.labeled: (initial sample)
             self.labeled_X = X
@@ -74,6 +68,14 @@ class Strategy(ABC):
             self.error = error
         else:
             self.update_sample(key, X, y, error)
+
+    def choose_sample_generative(self, key):
+        X, y, error, _ = self.generate_data(
+            self.initial_sample_sz if self.labeled_X is None else self.pool_sz,
+            coeff=self.true_coeff,
+            key=key,
+        )
+        self.choose_sample(key, X, y, error)
 
     def estimate_variance(self, params, y, X, err):
         residual = y - self.model_inference_fn(params, X)
@@ -85,7 +87,9 @@ class Strategy(ABC):
         sim_start = time.perf_counter()
         for i in tqdm(range(self.iter)):
             self.choose_sample(key=step_keys[i])
-            estimated_coeffs = self.model_training_fn(self.labeled_X, self.labeled_y)
+            estimated_coeffs = self.model_training_fn(
+                self.labeled_X, self.labeled_y
+            )
             self.current_params = estimated_coeffs
             param_diffs.append(jnp.absolute(estimated_coeffs - self.true_coeff))
         sim_end = time.perf_counter()

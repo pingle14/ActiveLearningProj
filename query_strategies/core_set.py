@@ -1,6 +1,20 @@
 import jax.numpy as jnp
 from jax import vmap, jit
 from query_strategies.strategy import Strategy
+from datetime import datetime
+
+
+# from sklearn.metrics import pairwise_distances
+def pairwise_distances(X, Y):
+    # Squared Euclidean distances
+    XX = jnp.sum(X**2, axis=1, keepdims=True)
+    YY = jnp.sum(Y**2, axis=1, keepdims=True)
+    distances = XX + jnp.transpose(YY) - 2 * jnp.dot(X, Y.T)
+    return distances
+
+
+# Vectorize the function using vmap
+pairwise_distances_vmap = vmap(pairwise_distances, in_axes=(0, None))
 
 
 @jit
@@ -52,7 +66,9 @@ class CoreSet(Strategy):
             given_key=given_key,
         )
         self.vmap_find_nearest_cent = vmap(find_nearest_cent, in_axes=(0, None))
-        self.vmap_update_nearest_cent = vmap(update_nearest_cent, in_axes=(0, 0, None))
+        self.vmap_update_nearest_cent = vmap(
+            update_nearest_cent, in_axes=(0, 0, None)
+        )
 
         # Step 2:
         self.max_num_outliers = 0
@@ -76,5 +92,38 @@ class CoreSet(Strategy):
                 X, self.nearest_dists, X[new_pt_indx]
             )
 
-        self.labeled_y = jnp.append(self.labeled_y, jnp.array(collected_labels), axis=0)
+        self.labeled_y = jnp.append(
+            self.labeled_y, jnp.array(collected_labels), axis=0
+        )
         self.error = jnp.append(self.error, jnp.array(collected_errs), axis=0)
+
+    # def furthest_first(self, X, X_set, n):
+    #     m = jnp.shape(X)[0]
+    #     if jnp.shape(X_set)[0] == 0:
+    #         min_dist = jnp.tile(float("inf"), m)
+    #     else:
+    #         dist_ctr = pairwise_distances(X, X_set)
+    #         min_dist = jnp.amin(dist_ctr, axis=1)
+
+    #     idxs = []
+
+    #     for _ in range(n):
+    #         idx = min_dist.argmax()
+    #         idxs.append(idx)
+    #         dist_new_ctr = pairwise_distances(X, X[[idx], :])
+    #         for j in range(m):
+    #             min_dist[j] = min(min_dist[j], dist_new_ctr[j, 0])
+
+    #     return idxs
+
+    # def query(self, n):
+    #     idxs_unlabeled = jnp.arange(self.n_pool)[~self.idxs_lb]
+    #     lb_flag = self.idxs_lb.copy()
+    #     embedding = self.get_embedding(self.X, self.Y)
+    #     embedding = embedding.numpy()
+
+    #     chosen_indxes = self.furthest_first(
+    #         embedding[idxs_unlabeled, :], embedding[lb_flag, :], n
+    #     )
+
+    #     return idxs_unlabeled[chosen_indxes]

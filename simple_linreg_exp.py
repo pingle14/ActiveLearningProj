@@ -20,6 +20,74 @@ def generate_rand_true_coeffs():
     return random_true_coeffs
 
 
+def new_experiment(
+    num_iters=100, pool_sz=1000, num_coeffs=2, initial_sample_sz=10
+):
+    sampling_algos = {"Random", "BAIT", "Fisher", "CoreSet"}
+    true_coeff = np.asarray([0 if i == 0 else 1 for i in range(num_coeffs)])
+    step_keys = random.split(random.PRNGKey(9355442), num_iters)
+
+    kwargs = {
+        "model_inference_fn": linear_model,
+        "model_training_fn": linear_regression,
+        "generate_data": generate_linear_data,
+        "initial_sample_sz": initial_sample_sz,
+        "pool_sz": pool_sz,
+        "budget": budget,
+        "iter": iter_per_algo,
+        "true_coeff": true_coeff,
+        "given_key": random.PRNGKey(9355442),
+    }
+
+    core_set_model = CoreSet(**kwargs)
+    bait_model = BAIT(**kwargs)
+    adj_fisher_model = AdjustedFisher(**kwargs)
+    rand_model = RandomSampling(**kwargs)
+
+    models = [
+        rand_model,
+        adj_fisher_model,
+    ]  # , rand_model, , core_set_model, bait_model
+
+    for i in tqdm(range(num_iters)):
+        # Generate pool
+        X, y, error, _ = generate_linear_data(
+            initial_sample_sz if i == 0 else pool_sz,
+            coeff=true_coeff,
+            key=step_keys[i],
+        )
+
+        # Each algo choose a point
+        for model in models:
+            model.choose_sample(step_keys[i], X, y, error)
+            estimated_coeffs = model.model_training_fn(
+                model.labeled_X, model.labeled_y
+            )
+            model.current_params = estimated_coeffs
+
+        if i % 100 == 0:
+            # Each algo records point chosen
+            for model in models:
+                # Update running labels
+                per_realization_labels = pd.DataFrame()
+                per_realization_labels["labels"] = [
+                    np.array(_)
+                    for _ in model.labeled_X[
+                        initial_sample_sz:
+                    ]  # ignore initial random labels
+                ]
+                per_realization_labels["realization"] = 0
+                per_realization_labels.reset_index(inplace=True)
+                per_realization_labels.rename(
+                    columns={"index": "Iteration"}, inplace=True
+                )
+
+                labeledX_df = per_realization_labels
+                labeledX_df.to_csv(
+                    f"taurus_data/{model.name}_labeled.csv", index=False
+                )
+
+
 # python simple_linreg_exp.py -n 100 -c 2 -s 10 -p 1000 -b 1 -i 100
 def experiment(
     num_rounds=10,
@@ -30,7 +98,7 @@ def experiment(
     iter_per_algo=10,
     verbose=False,
 ):
-    sampling_algos = {"Random", "BAIT", "Fisher"}  # , "CoreSet"
+    sampling_algos = {"CoreSet"}  # {"Random", "BAIT", "Fisher"}  # , "CoreSet"
     true_coeff = np.asarray([0 if i == 0 else 1 for i in range(num_coeffs)])
     step_keys = random.split(random.PRNGKey(0), num_rounds)
 
@@ -78,39 +146,41 @@ def experiment(
                     diffs,
                 ) = model.simulate()
 
-                # Update running labels
-                per_realization_labels = pd.DataFrame()
-                per_realization_labels["labels"] = [
-                    np.array(_)
-                    for _ in labeledX[
-                        initial_sample_sz:
-                    ]  # ignore initial random labels
-                ]
-                per_realization_labels["realization"] = realization
-                per_realization_labels.reset_index(inplace=True)
-                per_realization_labels.rename(
-                    columns={"index": "Iteration"}, inplace=True
-                )
-                realization_chosen_labels.append(per_realization_labels)
-
                 # Update running param diffs
-                per_realization_param_diff = pd.DataFrame()
-                per_realization_param_diff["param_diffs"] = [
-                    np.array(_) for _ in diffs
-                ]
-                per_realization_param_diff.reset_index(inplace=True)
-                per_realization_param_diff.rename(
-                    columns={"index": "Iteration"}, inplace=True
-                )
-                realization_param_diffs.append(per_realization_param_diff)
+                if num_rounds > 1:
+                    per_realization_param_diff = pd.DataFrame()
+                    per_realization_param_diff["param_diffs"] = [
+                        np.array(_) for _ in diffs
+                    ]
+                    per_realization_param_diff.reset_index(inplace=True)
+                    per_realization_param_diff.rename(
+                        columns={"index": "Iteration"}, inplace=True
+                    )
+                    realization_param_diffs.append(per_realization_param_diff)
+                else:
+                    # Update running labels
+                    per_realization_labels = pd.DataFrame()
+                    per_realization_labels["labels"] = [
+                        np.array(_)
+                        for _ in labeledX[
+                            initial_sample_sz:
+                        ]  # ignore initial random labels
+                    ]
+                    per_realization_labels["realization"] = realization
+                    per_realization_labels.reset_index(inplace=True)
+                    per_realization_labels.rename(
+                        columns={"index": "Iteration"}, inplace=True
+                    )
+                    realization_chosen_labels.append(per_realization_labels)
 
-        param_diffs_df = pd.concat(realization_param_diffs, axis=0)
-        param_diffs_df.to_csv(
-            f"data/{sampling_algo}_param_diff.csv", index=False
-        )
-
-        labeledX_df = pd.concat(realization_chosen_labels, axis=0)
-        labeledX_df.to_csv(f"data/{sampling_algo}_labeled.csv", index=False)
+        if num_rounds > 1:
+            param_diffs_df = pd.concat(realization_param_diffs, axis=0)
+            param_diffs_df.to_csv(
+                f"data/{sampling_algo}_param_diff.csv", index=False
+            )
+        else:
+            labeledX_df = pd.concat(realization_chosen_labels, axis=0)
+            labeledX_df.to_csv(f"data/{sampling_algo}_labeled.csv", index=False)
 
 
 # ------------------- RUN ---------------------
@@ -203,14 +273,16 @@ if verbose:
     print("*" * 42)
     print("*" + " " * 10 + f"Benching with args: {args}")
     print("*" * 42)
-experiment(
-    num_rounds=num_rounds,
-    num_coeffs=num_coeffs,
-    initial_sample_sz=initial_sample_sz,
-    pool_sz=pool_sz,
-    budget=budget,
-    iter_per_algo=iter_per_algo,
-    verbose=verbose,
-)
+# experiment(
+#     num_rounds=num_rounds,
+#     num_coeffs=num_coeffs,
+#     initial_sample_sz=initial_sample_sz,
+#     pool_sz=pool_sz,
+#     budget=budget,
+#     iter_per_algo=iter_per_algo,
+#     verbose=verbose,
+# )
+
+new_experiment(num_iters=4000)
 if verbose:
     print("DONE")
