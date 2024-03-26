@@ -251,6 +251,14 @@ parser.add_argument(
     default=10,
 )
 parser.add_argument(
+    "-l",
+    "--longExperiment",
+    help="Bool to run long experiement",
+    type=bool,
+    required=False,
+    default=False,
+)
+parser.add_argument(
     "-v",
     "--verbose",
     help="Bool to print stuff or not",
@@ -273,16 +281,19 @@ if verbose:
     print("*" * 42)
     print("*" + " " * 10 + f"Benching with args: {args}")
     print("*" * 42)
-# experiment(
-#     num_rounds=num_rounds,
-#     num_coeffs=num_coeffs,
-#     initial_sample_sz=initial_sample_sz,
-#     pool_sz=pool_sz,
-#     budget=budget,
-#     iter_per_algo=iter_per_algo,
-#     verbose=verbose,
-# )
 
-new_experiment(num_iters=4000)
+if bool(args['longExperiment']):
+    experiment(
+        num_rounds=num_rounds,
+        num_coeffs=num_coeffs,
+        initial_sample_sz=initial_sample_sz,
+        pool_sz=pool_sz,
+        budget=budget,
+        iter_per_algo=iter_per_algo,
+        verbose=verbose,
+    )
+else:
+    new_experiment(num_iters=4000)
+    
 if verbose:
     print("DONE")
