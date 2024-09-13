@@ -6,6 +6,10 @@ import time
 
 
 # Estimate variance of the estimated parameters analytically
+# ASSUMPTION: Unbiased Estimator:
+# b^2(x) = MSE 
+#        = B^2 + Var
+#        = 0 + Var(theta-hat)
 @jit
 def estimate_variance(err, residual):
     # Compute the weights
