@@ -14,15 +14,11 @@ from linreg_utils.model import linear_model, linear_regression
 def generate_rand_true_coeffs():
     key = random.PRNGKey(9355442)
     _, key_coeff, _, _ = random.split(key, 4)
-    random_true_coeffs = np.asarray(
-        random.normal(key_coeff, shape=(num_coeffs,))
-    )
+    random_true_coeffs = np.asarray(random.normal(key_coeff, shape=(num_coeffs,)))
     return random_true_coeffs
 
 
-def new_experiment(
-    num_iters=100, pool_sz=1000, num_coeffs=2, initial_sample_sz=10
-):
+def new_experiment(num_iters=100, pool_sz=1000, num_coeffs=2, initial_sample_sz=10):
     sampling_algos = {"Random", "BAIT", "Fisher", "CoreSet"}
     true_coeff = np.asarray([int(i != 0) for i in range(num_coeffs)])
     step_keys = random.split(random.PRNGKey(9355442), num_iters)
@@ -60,9 +56,7 @@ def new_experiment(
         # Each algo choose a point
         for model in models:
             model.choose_sample(step_keys[i], X, y, error)
-            estimated_coeffs = model.model_training_fn(
-                model.labeled_X, model.labeled_y
-            )
+            estimated_coeffs = model.model_training_fn(model.labeled_X, model.labeled_y)
             model.current_params = estimated_coeffs
 
         if i % 100 == 0:
@@ -83,9 +77,18 @@ def new_experiment(
                 )
 
                 labeledX_df = per_realization_labels
-                labeledX_df.to_csv(
-                    f"taurus_data/{model.name}_labeled.csv", index=False
-                )
+                labeledX_df.to_csv(f"taurus_data/{model.name}_labeled.csv", index=False)
+
+
+def corrected_experiement(
+    num_rounds=10,
+    num_coeffs=5,
+    initial_sample_sz=20,
+    pool_sz=100,
+    budget=10,
+    iter_per_algo=10,
+    verbose=False,
+): ...
 
 
 # python simple_linreg_exp.py -n 100 -c 2 -s 10 -p 1000 -b 1 -i 100
@@ -98,7 +101,7 @@ def experiment(
     iter_per_algo=10,
     verbose=False,
 ):
-    sampling_algos = ['Fisher', 'BAIT', 'CoreSet', 'Random'] #  
+    sampling_algos = ["Fisher", "BAIT", "CoreSet", "Random"]  #
     true_coeff = np.asarray([0 if i == 0 else 1 for i in range(num_coeffs)])
     step_keys = random.split(random.PRNGKey(0), num_rounds)
 
@@ -129,13 +132,19 @@ def experiment(
             model = (
                 CoreSet(**kwargs)
                 if sampling_algo == "CoreSet"
-                else AdjustedFisher(**kwargs)
-                if sampling_algo == "Fisher"
-                else BAIT(**kwargs)
-                if sampling_algo == "BAIT"
-                else RandomSampling(**kwargs)
-                if sampling_algo == "Random"
-                else None
+                else (
+                    AdjustedFisher(**kwargs)
+                    if sampling_algo == "Fisher"
+                    else (
+                        BAIT(**kwargs)
+                        if sampling_algo == "BAIT"
+                        else (
+                            RandomSampling(**kwargs)
+                            if sampling_algo == "Random"
+                            else None
+                        )
+                    )
+                )
             )
 
             if model:
@@ -176,7 +185,8 @@ def experiment(
         if num_rounds > 1:
             param_diffs_df = pd.concat(realization_param_diffs, axis=0)
             param_diffs_df.to_csv(
-                f"data/{sampling_algo}_param_diff_s{initial_sample_sz}_b{budget}_p{pool_sz}_n{num_rounds}_i{iter_per_algo}_c{num_coeffs}.csv", index=False
+                f"data/{sampling_algo}_param_diff_s{initial_sample_sz}_b{budget}_p{pool_sz}_n{num_rounds}_i{iter_per_algo}_c{num_coeffs}.csv",
+                index=False,
             )
         else:
             labeledX_df = pd.concat(realization_chosen_labels, axis=0)
@@ -193,9 +203,7 @@ def experiment(
 # iter_per_algo=10,
 # ###############################
 
-parser = argparse.ArgumentParser(
-    prog="BenchMark", description="Benchamarks stuff"
-)
+parser = argparse.ArgumentParser(prog="BenchMark", description="Benchamarks stuff")
 parser.add_argument(
     "-n",
     "--numRounds",
@@ -254,7 +262,7 @@ parser.add_argument(
     "-l",
     "--longExperiment",
     help="Bool to run long experiement",
-    action='store_true',
+    action="store_true",
     required=False,
     default=False,
 )
@@ -262,7 +270,7 @@ parser.add_argument(
     "-v",
     "--verbose",
     help="Bool to print stuff or not",
-    action='store_true',
+    action="store_true",
     required=False,
     default=False,
 )
@@ -294,6 +302,6 @@ experiment(
 )
 # else:
 #     new_experiment(num_iters=4000)
-    
+
 if verbose:
     print("DONE")
