@@ -64,7 +64,7 @@ class Strategy(ABC):
     def update_sample(self, key, X, y, error):
         return
 
-    def choose_sample(self, key, X, y, error):
+    def choose_sample(self, key, X=None, y=None, error=None):
         if self.labeled_X is None:
             # Init self.labeled: (initial sample)
             self.labeled_X = X
@@ -90,10 +90,14 @@ class Strategy(ABC):
         step_keys = random.split(random.PRNGKey(self.given_key), self.iter)
         sim_start = time.perf_counter()
         for i in tqdm(range(self.iter)):
-            self.choose_sample(key=step_keys[i])
+            # Generate pool
+            self.choose_sample_generative(key=step_keys[i])
+
+            # self.choose_sample(key=step_keys[i])
             estimated_coeffs = self.model_training_fn(
                 self.labeled_X, self.labeled_y
             )
+            
             self.current_params = estimated_coeffs
             param_diffs.append(jnp.absolute(estimated_coeffs - self.true_coeff))
         sim_end = time.perf_counter()

@@ -24,7 +24,7 @@ def new_experiment(
     num_iters=100, pool_sz=1000, num_coeffs=2, initial_sample_sz=10
 ):
     sampling_algos = {"Random", "BAIT", "Fisher", "CoreSet"}
-    true_coeff = np.asarray([0 if i == 0 else 1 for i in range(num_coeffs)])
+    true_coeff = np.asarray([int(i != 0) for i in range(num_coeffs)])
     step_keys = random.split(random.PRNGKey(9355442), num_iters)
 
     kwargs = {
@@ -93,12 +93,12 @@ def experiment(
     num_rounds=10,
     num_coeffs=5,
     initial_sample_sz=20,
-    pool_sz=1000,
+    pool_sz=100,
     budget=10,
     iter_per_algo=10,
     verbose=False,
 ):
-    sampling_algos = {"CoreSet"}  # {"Random", "BAIT", "Fisher"}  # , "CoreSet"
+    sampling_algos = ['Fisher', 'BAIT', 'CoreSet', 'Random'] #  
     true_coeff = np.asarray([0 if i == 0 else 1 for i in range(num_coeffs)])
     step_keys = random.split(random.PRNGKey(0), num_rounds)
 
@@ -176,7 +176,7 @@ def experiment(
         if num_rounds > 1:
             param_diffs_df = pd.concat(realization_param_diffs, axis=0)
             param_diffs_df.to_csv(
-                f"data/{sampling_algo}_param_diff.csv", index=False
+                f"data/{sampling_algo}_param_diff_s{initial_sample_sz}_b{budget}_p{pool_sz}_n{num_rounds}_i{iter_per_algo}_c{num_coeffs}.csv", index=False
             )
         else:
             labeledX_df = pd.concat(realization_chosen_labels, axis=0)
@@ -254,7 +254,7 @@ parser.add_argument(
     "-l",
     "--longExperiment",
     help="Bool to run long experiement",
-    type=bool,
+    action='store_true',
     required=False,
     default=False,
 )
@@ -262,7 +262,7 @@ parser.add_argument(
     "-v",
     "--verbose",
     help="Bool to print stuff or not",
-    type=bool,
+    action='store_true',
     required=False,
     default=False,
 )
@@ -282,18 +282,18 @@ if verbose:
     print("*" + " " * 10 + f"Benching with args: {args}")
     print("*" * 42)
 
-if bool(args['longExperiment']):
-    experiment(
-        num_rounds=num_rounds,
-        num_coeffs=num_coeffs,
-        initial_sample_sz=initial_sample_sz,
-        pool_sz=pool_sz,
-        budget=budget,
-        iter_per_algo=iter_per_algo,
-        verbose=verbose,
-    )
-else:
-    new_experiment(num_iters=4000)
+# if bool(args['longExperiment']):
+experiment(
+    num_rounds=num_rounds,
+    num_coeffs=num_coeffs,
+    initial_sample_sz=initial_sample_sz,
+    pool_sz=pool_sz,
+    budget=budget,
+    iter_per_algo=iter_per_algo,
+    verbose=verbose,
+)
+# else:
+#     new_experiment(num_iters=4000)
     
 if verbose:
     print("DONE")
