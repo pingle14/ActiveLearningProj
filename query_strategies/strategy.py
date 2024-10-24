@@ -7,7 +7,7 @@ import time
 
 # Estimate variance of the estimated parameters analytically
 # ASSUMPTION: Unbiased Estimator:
-# b^2(x) = MSE 
+# b^2(x) = MSE
 #        = B^2 + Var
 #        = 0 + Var(theta-hat)
 @jit
@@ -85,19 +85,17 @@ class Strategy(ABC):
         residual = y - self.model_inference_fn(params, X)
         return estimate_variance(err, residual)
 
-    def simulate(self):
+    def simulate(self, X=None, y=None, error=None):
         param_diffs = []
         step_keys = random.split(random.PRNGKey(self.given_key), self.iter)
         sim_start = time.perf_counter()
-        for i in tqdm(range(self.iter)):
+        for i in range(self.iter):
             # Generate pool
             self.choose_sample_generative(key=step_keys[i])
 
             # self.choose_sample(key=step_keys[i])
-            estimated_coeffs = self.model_training_fn(
-                self.labeled_X, self.labeled_y
-            )
-            
+            estimated_coeffs = self.model_training_fn(self.labeled_X, self.labeled_y)
+
             self.current_params = estimated_coeffs
             param_diffs.append(jnp.absolute(estimated_coeffs - self.true_coeff))
         sim_end = time.perf_counter()
