@@ -1,7 +1,6 @@
 import jax.numpy as jnp
 from jax import jit, random, grad
 from abc import ABC, abstractmethod
-from tqdm import tqdm
 import time
 
 
@@ -14,6 +13,8 @@ import time
 def estimate_variance(err, residual):
     # Compute the weights
     weights = 1 / err
+    # 2nd moment = E[(x - mu)^2] = sigma^2 + sigma_e^2
+    # sigma^2 = 1/n sum ((x - x-bar)^2) - sigma_e^2
     A = jnp.sum(weights) / (jnp.sum(weights) ** 2 - jnp.sum(weights**2))
 
     # Compute the weighted measurements

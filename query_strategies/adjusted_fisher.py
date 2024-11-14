@@ -45,15 +45,11 @@ class AdjustedFisher(Strategy):
         return indices
 
     # Estimate Fisher information
-    def fisher_information(
-        self, params, variance, X, err, n_params, start_index
-    ):
+    def fisher_information(self, params, variance, X, err, n_params, start_index):
         if n_params is None:
             df = self.grad_f(params, X)
         else:
-            df = lax.dynamic_slice(
-                self.grad_f(params, X), (start_index,), (n_params,)
-            )
+            df = lax.dynamic_slice(self.grad_f(params, X), (start_index,), (n_params,))
         fi_adjusted = jnp.outer(df, df) / (variance + err**2)
         return fi_adjusted
 
