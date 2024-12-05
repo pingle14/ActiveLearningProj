@@ -16,6 +16,7 @@ class AdjustedFisher(Strategy):
         iter=10,
         true_coeff=None,
         given_key=None,
+        measurement_error=False,
     ):
         super(AdjustedFisher, self).__init__(
             name="AdjustedFisher",
@@ -28,6 +29,7 @@ class AdjustedFisher(Strategy):
             iter=iter,
             true_coeff=true_coeff,
             given_key=given_key,
+            measurement_error=measurement_error,
         )
         self.fisher_information_vmaped = vmap(
             self.fisher_information,
@@ -54,17 +56,22 @@ class AdjustedFisher(Strategy):
         return fi_adjusted
 
     def update_sample(self, key, X, y, error):
-        n_params = None
         trace = True
         Xres = X - jnp.mean(self.labeled_X, axis=0)
         variance = self.estimate_variance(
-            self.current_params, self.labeled_y, self.labeled_X, self.error
+            # NOTE: HYP 1: jnp.asarray([0 if i == 0 else 1 for i in range(len(self.current_params))]),
+            self.current_params,
+            self.labeled_y,
+            self.labeled_X,
+            self.error,
         )
         fi = self.fisher_information_vmaped(
-            self.current_params, variance, Xres, error, n_params, 1
+            self.current_params, variance, Xres, error, 1, 1
         )
-
+        # print(f"FI: {fi.shape}")  # num_rows, num_feat, num_feat
+        "For each row (dim 0), calculates sum of diagonal (trace) of Jacobian num_feat x num_feat mtrx"
         objective_func = jnp.trace(fi, axis1=1, axis2=2) if trace else det(fi)
+        # print(objective_func)
         indices = self.top_k_indices(objective_func, self.budget)
         sampled_feature_vectors = X[indices, :]
         self.labeled_X = (
@@ -75,4 +82,6 @@ class AdjustedFisher(Strategy):
             )
         )
         self.labeled_y = jnp.append(self.labeled_y, y[indices])
-        self.error = jnp.append(self.error, error[indices])
+
+        if self.measurement_error:
+            self.error = jnp.append(self.error, error[indices])

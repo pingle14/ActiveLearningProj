@@ -10,7 +10,7 @@ import time
 #        = B^2 + Var
 #        = 0 + Var(theta-hat)
 @jit
-def estimate_variance(err, residual):
+def estimate_variance_meas_err(err, residual):
     # Compute the weights
     weights = 1 / err
     # 2nd moment = E[(x - mu)^2] = sigma^2 + sigma_e^2
@@ -18,7 +18,8 @@ def estimate_variance(err, residual):
     A = jnp.sum(weights) / (jnp.sum(weights) ** 2 - jnp.sum(weights**2))
 
     # Compute the weighted measurements
-    weighted_measurements = weights * (residual**2 - err**2)
+    error_diff = (residual**2) - (err**2)
+    weighted_measurements = weights * (error_diff)
 
     # Compute the variance estimator
     variance_estimator = A * jnp.sum(weighted_measurements)
@@ -26,7 +27,29 @@ def estimate_variance(err, residual):
     return variance_estimator
 
 
+@jit
+def estimate_variance(residual):
+    # unweighted estimator of variance
+    return jnp.sum(residual**2) / (len(residual) - 1)  # SSE
+
+    # # Compute the weights
+    # weights = jnp.ones_like(residual)
+    # # 2nd moment = E[(x - mu)^2] = sigma^2 + sigma_e^2
+    # # sigma^2 = 1/n sum ((x - x-bar)^2) - sigma_e^2
+    # A = jnp.sum(weights) / (jnp.sum(weights) ** 2 - jnp.sum(weights**2))
+
+    # # Compute the weighted measurements
+    # error_diff = residual**2 # MSE
+    # weighted_measurements = weights * (error_diff)
+
+    # # Compute the variance estimator
+    # variance_estimator = A * jnp.sum(weighted_measurements)
+
+    # return variance_estimator
+
+
 class Strategy(ABC):
+
     def __init__(
         self,
         model_inference_fn,
@@ -39,6 +62,7 @@ class Strategy(ABC):
         iter=100,
         true_coeff=None,
         given_key=None,
+        measurement_error=False,
     ):
         # Model and Grad
         self.model_inference_fn = model_inference_fn
@@ -54,6 +78,7 @@ class Strategy(ABC):
         self.budget = budget
         self.iter = iter
         self.true_coeff = true_coeff
+        self.measurement_error = measurement_error
 
         # Simulation Data
         self.labeled_X = None
@@ -79,12 +104,17 @@ class Strategy(ABC):
             self.initial_sample_sz if self.labeled_X is None else self.pool_sz,
             coeff=self.true_coeff,
             key=key,
+            measurement_error=self.measurement_error,
         )
         self.choose_sample(key, X, y, error)
 
     def estimate_variance(self, params, y, X, err):
         residual = y - self.model_inference_fn(params, X)
-        return estimate_variance(err, residual)
+        return (
+            estimate_variance_meas_err(err, residual)
+            if self.measurement_error
+            else estimate_variance(residual)
+        )
 
     def simulate(self, X=None, y=None, error=None):
         param_diffs = []
@@ -105,6 +135,6 @@ class Strategy(ABC):
         return (
             self.labeled_X,
             self.labeled_y,
-            self.error,
+            self.error if self.measurement_error else None,
             param_diffs,
         )

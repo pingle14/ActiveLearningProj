@@ -9,8 +9,15 @@ from query_strategies.core_set import CoreSet
 from query_strategies.adjusted_fisher import AdjustedFisher
 from query_strategies.bait import BAIT
 from query_strategies.random_sampling import RandomSampling
-from linreg_utils.data_gen import generate_linear_data
-from linreg_utils.model import linear_model, linear_regression
+
+# generate_linear_data, generate_non_linear_data
+from linreg_utils.data_gen import generate_data
+from linreg_utils.model import (
+    linear_model,
+    linear_regression,
+    nonlinear_regression,
+    nonlinear_model,
+)
 
 
 def generate_rand_true_coeffs():
@@ -37,29 +44,34 @@ def choose_model(sampling_algo, kwargs):
     return model
 
 
-def corrected_experiement(
+def experiment(
     num_rounds=10,
     num_coeffs=5,
     initial_sample_sz=20,
     pool_sz=100,
     budget=10,
     iter_per_algo=10,
+    measurement_error=False,
+    linearity_percentage=1.0,
 ):
     true_coeff = np.asarray([0 if i == 0 else 1 for i in range(num_coeffs)])
     step_keys = random.split(random.PRNGKey(0), num_rounds)
     param_diffs = defaultdict(list)
 
     for realization in tqdm(range(num_rounds)):
+        model_inference_fn = linear_model
+        model_training_fn = linear_regression
         kwargs = {
-            "model_inference_fn": linear_model,
-            "model_training_fn": linear_regression,
-            "generate_data": generate_linear_data,
+            "model_inference_fn": model_inference_fn,
+            "model_training_fn": model_training_fn,
+            "generate_data": generate_data,
             "initial_sample_sz": initial_sample_sz,
             "pool_sz": pool_sz,
             "budget": budget,
             "iter": iter_per_algo,
             "true_coeff": true_coeff,
             "given_key": step_keys[realization][0],
+            "measurement_error": measurement_error,
         }
 
         core_set_model = CoreSet(**kwargs)
@@ -81,12 +93,42 @@ def corrected_experiement(
         current_param_diffs = defaultdict(list)
         for iter in range(iter_per_algo):
             "Generate Data"
-            X, y, error, _ = generate_linear_data(
-                initial_sample_sz if iter == 0 else pool_sz,
+            X, y, error, _ = generate_data(
+                linearity_percentage=linearity_percentage,
+                sample_size=initial_sample_sz if iter == 0 else pool_sz,
                 coeff=true_coeff,
                 key=iter_step_keys[iter],
+                measurement_error=measurement_error,
             )
 
+            # 'HYP 2'
+            # if iter <= 30:
+            #     'BAIT and copy over'
+            #     X_cp = jnp.array(X)
+
+            #     "Decorrelation"
+            #     if bait_model.labeled_X is not None:
+            #         labeled_meanX = jnp.mean(bait_model.labeled_X, axis=0)
+            #         X_cp -= labeled_meanX
+
+            #     bait_model.choose_sample(iter_step_keys[iter], X_cp, y, error)
+            #     estimated_coeffs = bait_model.model_training_fn(
+            #         bait_model.labeled_X, bait_model.labeled_y
+            #     )
+
+            #     bait_model.current_params = estimated_coeffs
+
+            #     for algo, model in models.items():
+            #         if algo != 'BAIT':
+            #             model.labeled_X = bait_model.labeled_X.copy()
+            #             model.labeled_y = bait_model.labeled_y.copy()
+            #             model.error = bait_model.error.copy()
+            #             model.current_params = estimated_coeffs.copy()
+            #         current_param_diffs[algo].append(
+            #             jnp.absolute(estimated_coeffs - true_coeff)
+            #         )
+
+            # else:
             "Simulate model"
             for algo, model in models.items():
                 X_cp = jnp.array(X)
@@ -120,95 +162,9 @@ def corrected_experiement(
     for algo in param_diffs:
         param_diffs_df = pd.concat(param_diffs[algo], axis=0)
         param_diffs_df.to_csv(
-            f"data/NEW_{algo}_param_diff_s{initial_sample_sz}_b{budget}_p{pool_sz}_n{num_rounds}_i{iter_per_algo}_c{num_coeffs}.csv",
+            f"data/{algo}_param_diff_linearity{linearity_percentage}_s{initial_sample_sz}_b{budget}_p{pool_sz}_n{num_rounds}_i{iter_per_algo}_c{num_coeffs}_m{measurement_error}.csv",
             index=False,
         )
-
-
-# python simple_linreg_exp.py -n 100 -c 2 -s 10 -p 1000 -b 1 -i 100
-def experiment(
-    num_rounds=10,
-    num_coeffs=5,
-    initial_sample_sz=20,
-    pool_sz=100,
-    budget=10,
-    iter_per_algo=10,
-    verbose=False,
-):
-    sampling_algos = ["Fisher", "BAIT", "CoreSet", "Random"]  #
-    true_coeff = np.asarray([0 if i == 0 else 1 for i in range(num_coeffs)])
-    step_keys = random.split(random.PRNGKey(0), num_rounds)
-
-    for sampling_algo in sampling_algos:
-        if verbose:
-            print("#" * 30)
-            print(f'{" "* 10}{sampling_algo}')
-            print("#" * 30)
-
-        realization_param_diffs = []
-        realization_chosen_labels = []
-        for realization in tqdm(range(num_rounds)):
-            if verbose:
-                print(
-                    f"{sampling_algo} REALIZATION: {realization}> key: {step_keys[realization][0]}"
-                )
-            kwargs = {
-                "model_inference_fn": linear_model,
-                "model_training_fn": linear_regression,
-                "generate_data": generate_linear_data,
-                "initial_sample_sz": initial_sample_sz,
-                "pool_sz": pool_sz,
-                "budget": budget,
-                "iter": iter_per_algo,
-                "true_coeff": true_coeff,
-                "given_key": step_keys[realization][0],
-            }
-            model = choose_model(sampling_algo, kwargs)
-
-            if model:
-                (
-                    labeledX,
-                    _,
-                    _,
-                    diffs,
-                ) = model.simulate()
-
-                # Update running param diffs
-                if num_rounds > 1:
-                    per_realization_param_diff = pd.DataFrame()
-                    per_realization_param_diff["param_diffs"] = [
-                        np.array(_) for _ in diffs
-                    ]
-                    per_realization_param_diff.reset_index(inplace=True)
-                    per_realization_param_diff.rename(
-                        columns={"index": "Iteration"}, inplace=True
-                    )
-                    realization_param_diffs.append(per_realization_param_diff)
-                else:
-                    # Update running labels
-                    per_realization_labels = pd.DataFrame()
-                    per_realization_labels["labels"] = [
-                        np.array(_)
-                        for _ in labeledX[
-                            initial_sample_sz:
-                        ]  # ignore initial random labels
-                    ]
-                    per_realization_labels["realization"] = realization
-                    per_realization_labels.reset_index(inplace=True)
-                    per_realization_labels.rename(
-                        columns={"index": "Iteration"}, inplace=True
-                    )
-                    realization_chosen_labels.append(per_realization_labels)
-
-        if num_rounds > 1:
-            param_diffs_df = pd.concat(realization_param_diffs, axis=0)
-            param_diffs_df.to_csv(
-                f"data/{sampling_algo}_param_diff_s{initial_sample_sz}_b{budget}_p{pool_sz}_n{num_rounds}_i{iter_per_algo}_c{num_coeffs}.csv",
-                index=False,
-            )
-        else:
-            labeledX_df = pd.concat(realization_chosen_labels, axis=0)
-            labeledX_df.to_csv(f"data/{sampling_algo}_labeled.csv", index=False)
 
 
 # ------------------- RUN ---------------------
@@ -221,7 +177,24 @@ def experiment(
 # iter_per_algo=10,
 # ###############################
 
+
+def percentage_type(value):
+    ivalue = float(value)
+    if ivalue < 0.0 or ivalue > 1.0:
+        raise argparse.ArgumentTypeError("Percentage must be between 0 and 1")
+    return ivalue
+
+
 parser = argparse.ArgumentParser(prog="BenchMark", description="Benchamarks stuff")
+parser.add_argument(
+    "-l",
+    "--linearityPercentage",
+    action="store",
+    type=percentage_type,
+    help="Specify the linearity percentage between 0 and 1.",
+    default=1.0,
+    required=False,
+)
 parser.add_argument(
     "-n",
     "--numRounds",
@@ -277,17 +250,17 @@ parser.add_argument(
     default=10,
 )
 parser.add_argument(
-    "-l",
-    "--longExperiment",
-    help="Bool to run long experiement",
+    "-v",
+    "--verbose",
+    help="Bool to print stuff or not",
     action="store_true",
     required=False,
     default=False,
 )
 parser.add_argument(
-    "-v",
-    "--verbose",
-    help="Bool to print stuff or not",
+    "-m",
+    "--measurement_error",
+    help="Bool to include measurement_error",
     action="store_true",
     required=False,
     default=False,
@@ -302,33 +275,24 @@ pool_sz = int(args["poolSz"])
 budget = int(args["budget"])
 iter_per_algo = int(args["itersPerRound"])
 verbose = bool(args["verbose"])
+measurement_err = bool(args["measurement_error"])
+linearity_percentage = float(args["linearityPercentage"])
 
 if verbose:
     print("*" * 42)
     print("*" + " " * 10 + f"Benching with args: {args}")
     print("*" * 42)
 
-# if bool(args['longExperiment']):
-# experiment(
-#     num_rounds=num_rounds,
-#     num_coeffs=num_coeffs,
-#     initial_sample_sz=initial_sample_sz,
-#     pool_sz=pool_sz,
-#     budget=budget,
-#     iter_per_algo=iter_per_algo,
-#     verbose=verbose,
-# )
-
-corrected_experiement(
+experiment(
     num_rounds=num_rounds,
     num_coeffs=num_coeffs,
     initial_sample_sz=initial_sample_sz,
     pool_sz=pool_sz,
     budget=budget,
     iter_per_algo=iter_per_algo,
+    measurement_error=measurement_err,
+    linearity_percentage=linearity_percentage,
 )
-# else:
-#     new_experiment(num_iters=4000)
 
 if verbose:
     print("DONE")

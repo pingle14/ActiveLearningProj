@@ -15,6 +15,7 @@ class RandomSampling(Strategy):
         iter=10,
         true_coeff=None,
         given_key=None,
+        measurement_error=False,
     ):
         super(RandomSampling, self).__init__(
             true_coeff=true_coeff,
@@ -27,6 +28,7 @@ class RandomSampling(Strategy):
             budget=budget,
             iter=iter,
             given_key=given_key,
+            measurement_error=measurement_error,
         )
 
     def choose_indices(self, key):
@@ -45,4 +47,5 @@ class RandomSampling(Strategy):
             )
         )
         self.labeled_y = jnp.append(self.labeled_y, y[indices])
-        self.error = jnp.append(self.error, error[indices])
+        if self.measurement_error:
+            self.error = jnp.append(self.error, error[indices])

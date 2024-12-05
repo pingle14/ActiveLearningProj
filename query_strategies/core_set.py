@@ -52,6 +52,7 @@ class CoreSet(Strategy):
         iter=10,
         true_coeff=None,
         given_key=None,
+        measurement_error=False,
     ):
         super(CoreSet, self).__init__(
             name="CoreSet",
@@ -64,11 +65,10 @@ class CoreSet(Strategy):
             iter=iter,
             true_coeff=true_coeff,
             given_key=given_key,
+            measurement_error=measurement_error,
         )
         self.vmap_find_nearest_cent = vmap(find_nearest_cent, in_axes=(0, None))
-        self.vmap_update_nearest_cent = vmap(
-            update_nearest_cent, in_axes=(0, 0, None)
-        )
+        self.vmap_update_nearest_cent = vmap(update_nearest_cent, in_axes=(0, 0, None))
 
         # Step 2:
         self.max_num_outliers = 0
@@ -85,14 +85,15 @@ class CoreSet(Strategy):
             new_pt_y = y[new_pt_indx]
             self.labeled_X = jnp.append(self.labeled_X, new_pt_X, axis=0)
             collected_labels.append(new_pt_y)
-            collected_errs.append(error[new_pt_indx])
+
+            if self.measurement_error:
+                collected_errs.append(error[new_pt_indx])
 
             # Update distances
             self.nearest_dists = self.vmap_update_nearest_cent(
                 X, self.nearest_dists, X[new_pt_indx]
             )
 
-        self.labeled_y = jnp.append(
-            self.labeled_y, jnp.array(collected_labels), axis=0
-        )
-        self.error = jnp.append(self.error, jnp.array(collected_errs), axis=0)
+        self.labeled_y = jnp.append(self.labeled_y, jnp.array(collected_labels), axis=0)
+        if self.measurement_error:
+            self.error = jnp.append(self.error, jnp.array(collected_errs), axis=0)
