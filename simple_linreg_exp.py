@@ -9,14 +9,10 @@ from query_strategies.core_set import CoreSet
 from query_strategies.adjusted_fisher import AdjustedFisher
 from query_strategies.bait import BAIT
 from query_strategies.random_sampling import RandomSampling
-
-# generate_linear_data, generate_non_linear_data
 from linreg_utils.data_gen import generate_data
 from linreg_utils.model import (
     linear_model,
     linear_regression,
-    nonlinear_regression,
-    nonlinear_model,
 )
 
 
