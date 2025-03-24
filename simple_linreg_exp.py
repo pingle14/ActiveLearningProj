@@ -40,6 +40,87 @@ def choose_model(sampling_algo, kwargs):
     return model
 
 
+def gainRatio(
+    num_coeffs=2,
+    initial_sample_sz=10,
+    pool_sz=100,
+    budget=1,
+    iter_per_algo=10,
+    measurement_error=False,
+    linearity_percentage=1.0,
+):
+    true_coeff = np.asarray([0 if i == 0 else 1 for i in range(num_coeffs)])
+    step_keys = random.split(random.PRNGKey(0), 1)
+    param_diffs = defaultdict(list)
+
+    model_inference_fn = linear_model
+    model_training_fn = linear_regression
+    kwargs = {
+        "model_inference_fn": model_inference_fn,
+        "model_training_fn": model_training_fn,
+        "generate_data": generate_data,
+        "initial_sample_sz": initial_sample_sz,
+        "pool_sz": pool_sz,
+        "budget": budget,
+        "iter": iter_per_algo,
+        "true_coeff": true_coeff,
+        "given_key": step_keys[0][0],
+        "measurement_error": measurement_error,
+    }
+
+    core_set_model = CoreSet(**kwargs)
+    bait_model = BAIT(**kwargs)
+    adj_fisher_model = AdjustedFisher(**kwargs)
+    rand_model = RandomSampling(**kwargs)
+
+    models = {
+        "Fisher": adj_fisher_model,
+        "BAIT": bait_model,
+        "CoreSet": core_set_model,
+        "Random": rand_model,
+    }
+
+    iter_step_keys = random.split(random.PRNGKey(step_keys[0][0]), iter_per_algo)
+    labeledXData = defaultdict(list)
+    for iter in tqdm(range(iter_per_algo)):
+        "Generate Data"
+        X, y, error, _ = generate_data(
+            linearity_percentage=linearity_percentage,
+            sample_size=initial_sample_sz if iter == 0 else pool_sz,
+            coeff=true_coeff,
+            key=iter_step_keys[iter],
+            measurement_error=measurement_error,
+        )
+
+        # else:
+        "Simulate model"
+        for algo, model in models.items():
+            X_cp = jnp.array(X)
+
+            "Decorrelation"
+            if model.labeled_X is not None:
+                labeled_meanX = jnp.mean(model.labeled_X, axis=0)
+                X_cp -= labeled_meanX
+
+            model.choose_sample(iter_step_keys[iter], X_cp, y, error)
+            estimated_coeffs = model.model_training_fn(model.labeled_X, model.labeled_y)
+            model.current_params = estimated_coeffs
+            labeledXData[algo].append(jnp.var(model.labeled_X))
+
+    df = pd.DataFrame()
+    for algo, model in models.items():
+        mini_df = pd.Series(labeledXData[algo])
+        mini_df = mini_df.to_frame(name="Var(Labeled Points)")
+        mini_df["Algorithm"] = algo if algo != "Fisher" else "Our Approach"
+        mini_df.reset_index(inplace=True)
+        mini_df.rename(columns={"index": "Iteration"}, inplace=True)
+        df = pd.concat([df, mini_df])
+    df.to_csv(
+        f"data/variancesDf_linearity{linearity_percentage}_s{initial_sample_sz}_b{budget}_p{pool_sz}_n1_i{iter_per_algo}_c{num_coeffs}_m{measurement_error}.csv",
+        index=False,
+    )
+
+
 def experiment(
     num_rounds=10,
     num_coeffs=5,
@@ -50,6 +131,17 @@ def experiment(
     measurement_error=False,
     linearity_percentage=1.0,
 ):
+    if num_rounds <= 1:
+        gainRatio(
+            num_coeffs,
+            initial_sample_sz,
+            pool_sz,
+            budget,
+            iter_per_algo,
+            measurement_error,
+            linearity_percentage,
+        )
+        return
     true_coeff = np.asarray([0 if i == 0 else 1 for i in range(num_coeffs)])
     step_keys = random.split(random.PRNGKey(0), num_rounds)
     param_diffs = defaultdict(list)
