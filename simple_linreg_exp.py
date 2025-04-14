@@ -165,6 +165,10 @@ def experiment(
         core_set_model = CoreSet(**kwargs)
         bait_model = BAIT(**kwargs)
         adj_fisher_model = AdjustedFisher(**kwargs)
+        if num_coeffs > 2:
+            adj_fisher_model.num_params = 2
+            adj_fisher_model.param_start = 1
+
         rand_model = RandomSampling(**kwargs)
 
         models = {
@@ -189,34 +193,6 @@ def experiment(
                 measurement_error=measurement_error,
             )
 
-            # 'HYP 2'
-            # if iter <= 30:
-            #     'BAIT and copy over'
-            #     X_cp = jnp.array(X)
-
-            #     "Decorrelation"
-            #     if bait_model.labeled_X is not None:
-            #         labeled_meanX = jnp.mean(bait_model.labeled_X, axis=0)
-            #         X_cp -= labeled_meanX
-
-            #     bait_model.choose_sample(iter_step_keys[iter], X_cp, y, error)
-            #     estimated_coeffs = bait_model.model_training_fn(
-            #         bait_model.labeled_X, bait_model.labeled_y
-            #     )
-
-            #     bait_model.current_params = estimated_coeffs
-
-            #     for algo, model in models.items():
-            #         if algo != 'BAIT':
-            #             model.labeled_X = bait_model.labeled_X.copy()
-            #             model.labeled_y = bait_model.labeled_y.copy()
-            #             model.error = bait_model.error.copy()
-            #             model.current_params = estimated_coeffs.copy()
-            #         current_param_diffs[algo].append(
-            #             jnp.absolute(estimated_coeffs - true_coeff)
-            #         )
-
-            # else:
             "Simulate model"
             for algo, model in models.items():
                 X_cp = jnp.array(X)
@@ -253,6 +229,128 @@ def experiment(
             f"data/{algo}_param_diff_linearity{linearity_percentage}_s{initial_sample_sz}_b{budget}_p{pool_sz}_n{num_rounds}_i{iter_per_algo}_c{num_coeffs}_m{measurement_error}.csv",
             index=False,
         )
+
+
+def multivar_experiment(
+    num_coeffs=5,
+    initial_sample_sz=10,
+    pool_sz=100,
+    budget=1,
+    iter_per_algo=1000,
+    measurement_error=False,
+    linearity_percentage=1.0,
+):
+    true_coeff = np.asarray([0 if i == 0 else 1 for i in range(num_coeffs)])
+    step_keys = random.split(random.PRNGKey(0), 1)
+
+    model_inference_fn = linear_model
+    model_training_fn = linear_regression
+    kwargs = {
+        "model_inference_fn": model_inference_fn,
+        "model_training_fn": model_training_fn,
+        "generate_data": generate_data,
+        "initial_sample_sz": initial_sample_sz,
+        "pool_sz": pool_sz,
+        "budget": budget,
+        "iter": iter_per_algo,
+        "true_coeff": true_coeff,
+        "given_key": step_keys[0][0],
+        "measurement_error": measurement_error,
+    }
+
+    # core_set_model = CoreSet(**kwargs)
+    # bait_model = BAIT(**kwargs)
+    rand_model = RandomSampling(**kwargs)
+
+    adj_fisher_model = AdjustedFisher(**kwargs)
+    adj_fisher_model.num_params = 2
+    adj_fisher_model.param_start = 1
+
+    big_budget = AdjustedFisher(**kwargs)
+    big_budget.num_params = 2
+    big_budget.param_start = 1
+    big_budget.budget = budget * 10
+
+    big_pool = AdjustedFisher(**kwargs)
+    big_pool.num_params = 2
+    big_pool.param_start = 1
+    big_pool.pool_sz = pool_sz * 10
+
+    models = {
+        f"Our Approach (Pool Size = {pool_sz}, Budget = {budget})": adj_fisher_model,
+        f"Our Approach (Pool Size = {pool_sz}, Budget = {budget * 10})": big_budget,
+        # "BAIT": bait_model,
+        # "CoreSet": core_set_model,
+        "Random": rand_model,
+    }
+
+    iter_step_keys = random.split(random.PRNGKey(step_keys[0][0]), iter_per_algo)
+    for iter in tqdm(range(iter_per_algo)):
+        "Generate Data"
+        X, y, error, _ = generate_data(
+            linearity_percentage=linearity_percentage,
+            sample_size=initial_sample_sz if iter == 0 else pool_sz,
+            coeff=true_coeff,
+            key=iter_step_keys[iter],
+            measurement_error=measurement_error,
+        )
+
+        # else:
+        "Simulate model"
+        for algo, model in models.items():
+            X_cp = jnp.array(X)
+
+            "Decorrelation"
+            if model.labeled_X is not None:
+                labeled_meanX = jnp.mean(model.labeled_X, axis=0)
+                X_cp -= labeled_meanX
+
+            model.choose_sample(iter_step_keys[iter], X_cp, y, error)
+            estimated_coeffs = model.model_training_fn(model.labeled_X, model.labeled_y)
+            model.current_params = estimated_coeffs
+
+    # Larger pool size
+    print("Now model with larger pool size")
+    models[f"Our Approach (Pool Size = {pool_sz * 10}, Budget = {budget})"] = big_pool
+    for iter in tqdm(range(iter_per_algo)):
+        "Generate Data"
+        X, y, error, _ = generate_data(
+            linearity_percentage=linearity_percentage,
+            sample_size=initial_sample_sz if iter == 0 else big_pool.pool_sz,
+            coeff=true_coeff,
+            key=iter_step_keys[iter],
+            measurement_error=measurement_error,
+        )
+
+        # else:
+        "Simulate model"
+        X_cp = jnp.array(X)
+
+        "Decorrelation"
+        if big_pool.labeled_X is not None:
+            labeled_meanX = jnp.mean(big_pool.labeled_X, axis=0)
+            X_cp -= labeled_meanX
+
+        big_pool.choose_sample(iter_step_keys[iter], X_cp, y, error)
+        estimated_coeffs = big_pool.model_training_fn(
+            big_pool.labeled_X, big_pool.labeled_y
+        )
+        big_pool.current_params = estimated_coeffs
+
+    df = pd.DataFrame()
+    for algo, model in models.items():
+        mini_df = pd.DataFrame()
+        print(f"{algo}: labeledX: {model.labeled_X.shape}")
+        mini_df["X1"] = pd.Series(model.labeled_X[:, 1])
+        mini_df["X2"] = pd.Series(model.labeled_X[:, 2])
+        mini_df["Algorithm"] = algo
+        mini_df.reset_index(inplace=True)
+        mini_df.rename(columns={"index": "Iteration"}, inplace=True)
+        df = pd.concat([df, mini_df])
+    df.to_csv(
+        f"data/multiVar_linearity{linearity_percentage}_s{initial_sample_sz}_b{budget}_p{pool_sz}_n1_i{iter_per_algo}_c{num_coeffs}_m{measurement_error}.csv",
+        index=False,
+    )
 
 
 # ------------------- RUN ---------------------
@@ -371,16 +469,18 @@ if verbose:
     print("*" + " " * 10 + f"Benching with args: {args}")
     print("*" * 42)
 
-experiment(
-    num_rounds=num_rounds,
-    num_coeffs=num_coeffs,
-    initial_sample_sz=initial_sample_sz,
-    pool_sz=pool_sz,
-    budget=budget,
-    iter_per_algo=iter_per_algo,
-    measurement_error=measurement_err,
-    linearity_percentage=linearity_percentage,
-)
+# experiment(
+#     num_rounds=num_rounds,
+#     num_coeffs=num_coeffs,
+#     initial_sample_sz=initial_sample_sz,
+#     pool_sz=pool_sz,
+#     budget=budget,
+#     iter_per_algo=iter_per_algo,
+#     measurement_error=measurement_err,
+#     linearity_percentage=linearity_percentage,
+# )
+
+multivar_experiment(measurement_error=measurement_err)
 
 if verbose:
     print("DONE")
