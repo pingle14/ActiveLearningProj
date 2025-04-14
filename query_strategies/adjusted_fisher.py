@@ -36,6 +36,8 @@ class AdjustedFisher(Strategy):
             in_axes=(None, None, 0, 0, None, None),
             out_axes=0,
         )
+        self.param_start = 1
+        self.num_params = 1
 
     def top_k_indices(self, array, k):
         if k == 1:
@@ -66,12 +68,15 @@ class AdjustedFisher(Strategy):
             self.error,
         )
         fi = self.fisher_information_vmaped(
-            self.current_params, variance, Xres, error, 1, 1
+            self.current_params,
+            variance,
+            Xres,
+            error,
+            self.num_params,
+            self.param_start,
         )
-        # print(f"FI: {fi.shape}")  # num_rows, num_feat, num_feat
         "For each row (dim 0), calculates sum of diagonal (trace) of Jacobian num_feat x num_feat mtrx"
         objective_func = jnp.trace(fi, axis1=1, axis2=2) if trace else det(fi)
-        # print(objective_func)
         indices = self.top_k_indices(objective_func, self.budget)
         sampled_feature_vectors = X[indices, :]
         self.labeled_X = (
