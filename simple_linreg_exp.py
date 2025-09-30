@@ -208,8 +208,12 @@ def experiment(
                 )
 
                 model.current_params = estimated_coeffs
+
+                "Tracks the literall difference between estimated and true coefficients. Ex. [0.5 0.8] - [0 1]"
                 current_param_diffs[algo].append(
-                    jnp.absolute(estimated_coeffs - true_coeff)
+                    estimated_coeffs
+                    - true_coeff
+                    # jnp.absolute(estimated_coeffs - true_coeff)
                 )
 
         "data"
@@ -226,7 +230,7 @@ def experiment(
     for algo in param_diffs:
         param_diffs_df = pd.concat(param_diffs[algo], axis=0)
         param_diffs_df.to_csv(
-            f"data/{algo}_param_diff_linearity{linearity_percentage}_s{initial_sample_sz}_b{budget}_p{pool_sz}_n{num_rounds}_i{iter_per_algo}_c{num_coeffs}_m{measurement_error}.csv",
+            f"data/CORRECTED{algo}_param_diff_linearity{linearity_percentage}_s{initial_sample_sz}_b{budget}_p{pool_sz}_n{num_rounds}_i{iter_per_algo}_c{num_coeffs}_m{measurement_error}.csv",
             index=False,
         )
 
@@ -263,16 +267,16 @@ def multivar_experiment(
     rand_model = RandomSampling(**kwargs)
 
     adj_fisher_model = AdjustedFisher(**kwargs)
-    adj_fisher_model.num_params = 2
+    adj_fisher_model.num_params = 2 if num_coeffs > 2 else 1
     adj_fisher_model.param_start = 1
 
     big_budget = AdjustedFisher(**kwargs)
-    big_budget.num_params = 2
+    big_budget.num_params = 2 if num_coeffs > 2 else 1
     big_budget.param_start = 1
     big_budget.budget = budget * 10
 
     big_pool = AdjustedFisher(**kwargs)
-    big_pool.num_params = 2
+    big_pool.num_params = 2 if num_coeffs > 2 else 1
     big_pool.param_start = 1
     big_pool.pool_sz = pool_sz * 10
 
@@ -342,7 +346,8 @@ def multivar_experiment(
         mini_df = pd.DataFrame()
         print(f"{algo}: labeledX: {model.labeled_X.shape}")
         mini_df["X1"] = pd.Series(model.labeled_X[:, 1])
-        mini_df["X2"] = pd.Series(model.labeled_X[:, 2])
+        if num_coeffs > 2:
+            mini_df["X2"] = pd.Series(model.labeled_X[:, 2])
         mini_df["Algorithm"] = algo
         mini_df.reset_index(inplace=True)
         mini_df.rename(columns={"index": "Iteration"}, inplace=True)
@@ -480,7 +485,7 @@ if verbose:
 #     linearity_percentage=linearity_percentage,
 # )
 
-multivar_experiment(measurement_error=measurement_err)
+multivar_experiment(num_coeffs=num_coeffs, measurement_error=measurement_err)
 
 if verbose:
     print("DONE")
